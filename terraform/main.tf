@@ -27,4 +27,12 @@ module "quarantine_bucket" {
   }
 }
 
+module "sanitized_bucket" {
+  source      = "./modules/s3/sanitized_bucket"
+  bucket_name = "sanitized-bucket"
+  tags = {
+    Environment = "dev"
+    Project     = "scalable-file-upload"
+  }
+}
 
