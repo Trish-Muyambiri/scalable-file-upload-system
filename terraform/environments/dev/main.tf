@@ -4,9 +4,9 @@ provider "aws" {
 }
 
 module "quarantine_bucket" {
-  source = "../../modules/s3"
+  source = "../../modules/s3/quarantine"
 
-  bucket_name = "quarantine-bucket-${random_pet.suffix.id}"
+  bucket_name = "quarantine-bucket"
   tags = {
     Environment = "dev"
     Project     = "ScalableFileUpload"
