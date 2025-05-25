@@ -36,3 +36,18 @@ module "sanitized_bucket" {
   }
 }
 
+module "lambda" {
+  source               = "./modules/lambda"
+  lambda_function_name = "my-presign-lambda"
+  handler              = "lambda_function.lambda_handler"
+  runtime              = "python3.9"
+  bucket_arn           = module.quarantine_bucket.bucket_arn
+  source_path          = "./modules/lambda_src/generate_presigned_url"
+  environment = {
+    BUCKET_NAME = module.quarantine_bucket.bucket_name
+  }
+
+  tags = {
+    Project = "Generate Presigned URL Lambda"
+  }
+}
