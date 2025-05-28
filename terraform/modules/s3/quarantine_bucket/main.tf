@@ -1,53 +1,45 @@
-# main.tf for s3 module
+resource "random_pet" "suffix" {
+  length = 2
+}
 
-# create bucket
+# Create the S3 bucket
 resource "aws_s3_bucket" "quarantine_bucket" {
   bucket = "${var.bucket_name}-${random_pet.suffix.id}"
   tags   = var.tags
 }
 
-
-# block public access
-resource "aws_s3_bucket_public_access_block" "quarantine_bucket" {
+# Block public access
+resource "aws_s3_bucket_public_access_block" "quarantine_bucket_public_access_block" {
   bucket = aws_s3_bucket.quarantine_bucket.id
 
   block_public_acls       = true
-  block_public_policy     = true
+  block_public_policy     = false
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
 
-
-# enable versioning
-resource "aws_s3_bucket_versioning" "versioning_quarantine_bucket" {
+# Enable versioning
+resource "aws_s3_bucket_versioning" "quarantine_bucket_versioning" {
   bucket = aws_s3_bucket.quarantine_bucket.id
+
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-# enable encryption
-resource "aws_kms_key" "quarantine_bucket" {
-  description             = "This key is used to encrypt bucket objects"
-  deletion_window_in_days = 10
-}
-
+# Enable SSE-S3 encryption (AES256)
 resource "aws_s3_bucket_server_side_encryption_configuration" "quarantine_bucket_key" {
   bucket = aws_s3_bucket.quarantine_bucket.id
 
-  depends_on = [aws_kms_key.quarantine_bucket]
-
   rule {
     apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.quarantine_bucket.arn
-      sse_algorithm     = "aws:kms"
+      sse_algorithm = "AES256"
     }
   }
 }
 
-
-# lifecyle rules
-resource "aws_s3_bucket_lifecycle_configuration" "quarantine_bucket" {
+# Lifecycle rule to auto-delete objects in temp/ after 30 days
+resource "aws_s3_bucket_lifecycle_configuration" "quarantine_bucket_lifecycle_configuration" {
   bucket = aws_s3_bucket.quarantine_bucket.id
 
   rule {
@@ -64,6 +56,41 @@ resource "aws_s3_bucket_lifecycle_configuration" "quarantine_bucket" {
   }
 }
 
-resource "random_pet" "suffix" {
-  length = 2
+
+# Allow Lambda role to upload to this bucket
+resource "aws_s3_bucket_policy" "quarantine_bucket_policy" {
+  bucket = aws_s3_bucket.quarantine_bucket.id
+  depends_on = [aws_s3_bucket_public_access_block.quarantine_bucket]
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid    = "AllowLambdaAccess",
+        Effect = "Allow",
+        Principal = {
+          AWS = var.lambda_role_arn
+        },
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ],
+        Resource = "${aws_s3_bucket.quarantine_bucket.arn}/*"
+      },
+      {
+        Sid    = "AllowPresignedUploads",
+        Effect = "Allow",
+        Principal = "*",
+        Action = "s3:PutObject",
+        Resource = "${aws_s3_bucket.quarantine_bucket.arn}/uploads/*",
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-server-side-encryption" = "AES256"
+          }
+        }
+      }
+    ]
+  })
 }
+
