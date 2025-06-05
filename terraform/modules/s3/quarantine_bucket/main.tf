@@ -60,7 +60,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "quarantine_bucket_lifecycle_co
 # Allow Lambda role to upload to this bucket
 resource "aws_s3_bucket_policy" "quarantine_bucket_policy" {
   bucket = aws_s3_bucket.quarantine_bucket.id
-  depends_on = [aws_s3_bucket_public_access_block.quarantine_bucket]
+  depends_on = [aws_s3_bucket_public_access_block.quarantine_bucket_public_access_block]
 
   policy = jsonencode({
     Version = "2012-10-17",
