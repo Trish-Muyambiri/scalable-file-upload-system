@@ -1,30 +1,57 @@
-# main.tf for terraform module
 terraform {
+  required_version = ">= 1.0"
+  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-
     random = {
       source  = "hashicorp/random"
-      version = "~> 3.5.1"
+      version = "~> 3.5"
     }
   }
 }
 
-# Configure the AWS Provider
+# Provider configuration
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
 }
 
-module "quarantine_bucket" {
-  source      = "./modules/s3/quarantine_bucket"
-  bucket_name = "quarantine-bucket"
-  tags = {
-    Environment = "dev"
-    Project     = "scalable-file-upload"
+# Local values
+locals {
+  common_tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "terraform"
   }
+}
+
+# Lambda module
+module "lambda" {
+  source               = "./modules/lambda"
+  lambda_function_name = "${var.project_name}-presign-lambda-${var.environment}"
+  handler              = "lambda_function.lambda_handler"
+  runtime              = "python3.12"
+  source_path          = "${path.root}/modules/lambda_src/generate_presigned_url"
+  
+  bucket_arn = module.quarantine_bucket.bucket_arn
+  
+  environment = {
+    BUCKET_NAME = module.quarantine_bucket.bucket_name
+    ENVIRONMENT = var.environment
+  }
+
+  tags = local.common_tags
+}
+
+# S3 bucket module
+module "quarantine_bucket" {
+  source          = "./modules/s3/quarantine_bucket"
+  bucket_name     = "${var.project_name}-quarantine"
+  environment     = var.environment
+  tags            = local.common_tags
+  lambda_role_arn = module.lambda.lambda_exec_role_arn
 }
 
 module "sanitized_bucket" {
@@ -36,18 +63,17 @@ module "sanitized_bucket" {
   }
 }
 
-module "lambda" {
-  source               = "./modules/lambda"
-  lambda_function_name = "my-presign-lambda"
-  handler              = "lambda_function.lambda_handler"
-  runtime              = "python3.9"
-  bucket_arn           = module.quarantine_bucket.bucket_arn
-  source_path          = "./modules/lambda_src/generate_presigned_url"
-  environment = {
-    BUCKET_NAME = module.quarantine_bucket.bucket_name
-  }
-
-  tags = {
-    Project = "Generate Presigned URL Lambda"
-  }
+# API Gateway Module
+module "api_gateway" {
+  source                = "./modules/api_gateway"
+  lambda_function_arn = module.lambda.lambda_function_arn
+  lambda_function_name = module.lambda.lambda_function_name 
+  api_name              = var.api_name
+  stage_name            = var.stage_name
+  authorization_type    = var.authorization_type
+  lambda_invoke_arn     = module.lambda.invoke_arn
+  enable_logging        = false #var.enable_api_logging
+  enable_xray_tracing   = var.enable_xray_tracing
+  tags                  = var.tags
 }
+
